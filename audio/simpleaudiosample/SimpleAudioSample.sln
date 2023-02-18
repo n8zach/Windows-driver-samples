@@ -26,6 +26,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Main", "Source\Main\Main.vc
 		{771312CF-E5A2-4676-8142-86CEBDF99E2B} = {771312CF-E5A2-4676-8142-86CEBDF99E2B}
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "VirtualMicrophone", "VirtualMicrophone\VirtualMicrophone.vcxproj", "{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM64 = Debug|ARM64
@@ -96,6 +98,17 @@ Global
 		{E4DF0EEE-D35B-47F2-A9B1-41EA97C465FF}.Release|Win32.Build.0 = Release|Win32
 		{E4DF0EEE-D35B-47F2-A9B1-41EA97C465FF}.Release|x64.ActiveCfg = Release|x64
 		{E4DF0EEE-D35B-47F2-A9B1-41EA97C465FF}.Release|x64.Build.0 = Release|x64
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Debug|ARM64.ActiveCfg = Debug|Win32
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Debug|Win32.ActiveCfg = Debug|Win32
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Debug|Win32.Build.0 = Debug|Win32
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Debug|x64.ActiveCfg = Debug|x64
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Debug|x64.Build.0 = Debug|x64
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Debug|x64.Deploy.0 = Debug|x64
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Release|ARM64.ActiveCfg = Release|Win32
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Release|Win32.ActiveCfg = Release|Win32
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Release|Win32.Build.0 = Release|Win32
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Release|x64.ActiveCfg = Release|x64
+		{2B07CD23-783F-4869-8BC4-EB23F59D7A1D}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

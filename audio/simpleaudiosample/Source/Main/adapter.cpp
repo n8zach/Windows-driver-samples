@@ -19,6 +19,8 @@ Abstract:
 //
 #define PUT_GUIDS_HERE
 
+#include "Public.h"
+#include "guiddef.h"
 #include "definitions.h"
 #include "endpoints.h"
 #include "minipairs.h"
@@ -27,22 +29,28 @@ typedef void (*fnPcDriverUnload) (PDRIVER_OBJECT);
 fnPcDriverUnload gPCDriverUnloadRoutine = NULL;
 extern "C" DRIVER_UNLOAD DriverUnload;
 
+//DEFINE_GUID(GUID_DEVINTERFACE_VIRTUAL_MIC_IO,
+//   0xb56ad849, 0x3462, 0x4715, 0x87, 0x96, 0x24, 0xb0, 0x5c, 0x79, 0x0b, 0xd7);
+
 //-----------------------------------------------------------------------------
 // Referenced forward.
 //-----------------------------------------------------------------------------
+BOOLEAN IsStringTerminated(PCHAR pString, UINT uiLength, UINT* pdwStringLength);
 
 DRIVER_ADD_DEVICE AddDevice;
 
 NTSTATUS
 StartDevice
-( 
-    _In_  PDEVICE_OBJECT,      
-    _In_  PIRP,                
-    _In_  PRESOURCELIST        
-); 
+(
+    _In_  PDEVICE_OBJECT,
+    _In_  PIRP,
+    _In_  PRESOURCELIST
+);
 
 _Dispatch_type_(IRP_MJ_PNP)
 DRIVER_DISPATCH PnpHandler;
+_Dispatch_type_(IRP_MJ_DEVICE_CONTROL)
+DRIVER_DISPATCH IoctlHandler;
 
 //
 // Rendering streams are saved to a file by default. Use the registry value 
@@ -71,7 +79,7 @@ void ReleaseRegistryStringBuffer()
 //=============================================================================
 #pragma code_seg("PAGE")
 extern "C"
-void DriverUnload 
+void DriverUnload
 (
     _In_ PDRIVER_OBJECT DriverObject
 )
@@ -91,7 +99,8 @@ Environment:
 
 --*/
 {
-    PAGED_CODE(); 
+    PAGED_CODE();
+    UNICODE_STRING usDosDeviceName;
 
     DPF(D_TERSE, ("[DriverUnload]"));
 
@@ -101,7 +110,7 @@ Environment:
     {
         goto Done;
     }
-    
+
     //
     // Invoke first the port unload.
     //
@@ -117,6 +126,15 @@ Environment:
     {
         WdfDriverMiniportUnload(WdfGetDriver());
     }
+
+    RtlInitUnicodeString(&usDosDeviceName, L"\\DosDevices\\Example");
+    IoDeleteSymbolicLink(&usDosDeviceName);
+
+    if (DriverObject->DeviceObject != NULL)
+    {
+        IoDeleteDevice(DriverObject->DeviceObject);
+    }
+
 Done:
     return;
 }
@@ -170,7 +188,7 @@ __drv_requiresIRQL(PASSIVE_LEVEL)
 NTSTATUS
 GetRegistrySettings(
     _In_ PUNICODE_STRING RegistryPath
-   )
+)
 /*++
 
 Routine Description:
@@ -194,23 +212,23 @@ Returns:
     NTSTATUS                    ntStatus;
     UNICODE_STRING              parametersPath;
     RTL_QUERY_REGISTRY_TABLE    paramTable[] = {
-    // QueryRoutine     Flags                                               Name                     EntryContext             DefaultType                                                    DefaultData              DefaultLength
-        { NULL,   RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK, L"DoNotCreateDataFiles", &g_DoNotCreateDataFiles, (REG_DWORD << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT) | REG_DWORD, &g_DoNotCreateDataFiles, sizeof(ULONG)},
-        { NULL,   RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK, L"DisableToneGenerator", &g_DisableToneGenerator, (REG_DWORD << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT) | REG_DWORD, &g_DisableToneGenerator, sizeof(ULONG)},
-        { NULL,   0,                                                        NULL,                    NULL,                    0,                                                             NULL,                    0}
+        // QueryRoutine     Flags                                               Name                     EntryContext             DefaultType                                                    DefaultData              DefaultLength
+            { NULL,   RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK, L"DoNotCreateDataFiles", &g_DoNotCreateDataFiles, (REG_DWORD << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT) | REG_DWORD, &g_DoNotCreateDataFiles, sizeof(ULONG)},
+            { NULL,   RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK, L"DisableToneGenerator", &g_DisableToneGenerator, (REG_DWORD << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT) | REG_DWORD, &g_DisableToneGenerator, sizeof(ULONG)},
+            { NULL,   0,                                                        NULL,                    NULL,                    0,                                                             NULL,                    0}
     };
 
     DPF(D_TERSE, ("[GetRegistrySettings]"));
 
-    PAGED_CODE(); 
+    PAGED_CODE();
 
     RtlInitUnicodeString(&parametersPath, NULL);
 
     parametersPath.MaximumLength =
         RegistryPath->Length + sizeof(L"\\Parameters") + sizeof(WCHAR);
 
-    parametersPath.Buffer = (PWCH) ExAllocatePool2(POOL_FLAG_PAGED, parametersPath.MaximumLength, MINADAPTER_POOLTAG);
-    if (parametersPath.Buffer == NULL) 
+    parametersPath.Buffer = (PWCH)ExAllocatePool2(POOL_FLAG_PAGED, parametersPath.MaximumLength, MINADAPTER_POOLTAG);
+    if (parametersPath.Buffer == NULL)
     {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -219,14 +237,14 @@ Returns:
     RtlAppendUnicodeToString(&parametersPath, L"\\Parameters");
 
     ntStatus = RtlQueryRegistryValues(
-                 RTL_REGISTRY_ABSOLUTE | RTL_REGISTRY_OPTIONAL,
-                 parametersPath.Buffer,
-                 &paramTable[0],
-                 NULL,
-                 NULL
-                );
+        RTL_REGISTRY_ABSOLUTE | RTL_REGISTRY_OPTIONAL,
+        parametersPath.Buffer,
+        &paramTable[0],
+        NULL,
+        NULL
+    );
 
-    if (!NT_SUCCESS(ntStatus)) 
+    if (!NT_SUCCESS(ntStatus))
     {
         DPF(D_VERBOSE, ("RtlQueryRegistryValues failed, using default values, 0x%x", ntStatus));
         //
@@ -252,33 +270,33 @@ Returns:
 extern "C" DRIVER_INITIALIZE DriverEntry;
 extern "C" NTSTATUS
 DriverEntry
-( 
+(
     _In_  PDRIVER_OBJECT          DriverObject,
     _In_  PUNICODE_STRING         RegistryPathName
 )
 {
-/*++
+    /*++
 
-Routine Description:
+    Routine Description:
 
-  Installable driver initialization entry point.
-  This entry point is called directly by the I/O system.
+      Installable driver initialization entry point.
+      This entry point is called directly by the I/O system.
 
-  All audio adapter drivers can use this code without change.
+      All audio adapter drivers can use this code without change.
 
-Arguments:
+    Arguments:
 
-  DriverObject - pointer to the driver object
+      DriverObject - pointer to the driver object
 
-  RegistryPath - pointer to a unicode string representing the path,
-                   to driver-specific key in the registry.
+      RegistryPath - pointer to a unicode string representing the path,
+                       to driver-specific key in the registry.
 
-Return Value:
+    Return Value:
 
-  STATUS_SUCCESS if successful,
-  STATUS_UNSUCCESSFUL otherwise.
+      STATUS_SUCCESS if successful,
+      STATUS_UNSUCCESSFUL otherwise.
 
---*/
+    --*/
     NTSTATUS                    ntStatus;
     WDF_DRIVER_CONFIG           config;
 
@@ -301,7 +319,7 @@ Return Value:
         ntStatus,
         DPF(D_ERROR, ("Registry Configuration error 0x%x", ntStatus)),
         Done);
-    
+
     WDF_DRIVER_CONFIG_INIT(&config, WDF_NO_EVENT_CALLBACK);
     //
     // Set WdfDriverInitNoDispatchOverride flag to tell the framework
@@ -311,13 +329,13 @@ Return Value:
     // port driver.
     //
     config.DriverInitFlags |= WdfDriverInitNoDispatchOverride;
-    config.DriverPoolTag    = MINADAPTER_POOLTAG;
+    config.DriverPoolTag = MINADAPTER_POOLTAG;
 
     ntStatus = WdfDriverCreate(DriverObject,
-                               RegistryPathName,
-                               WDF_NO_OBJECT_ATTRIBUTES,
-                               &config,
-                               WDF_NO_HANDLE);
+        RegistryPathName,
+        WDF_NO_OBJECT_ATTRIBUTES,
+        &config,
+        WDF_NO_HANDLE);
     IF_FAILED_ACTION_JUMP(
         ntStatus,
         DPF(D_ERROR, ("WdfDriverCreate failed, 0x%x", ntStatus)),
@@ -326,9 +344,9 @@ Return Value:
     //
     // Tell the class driver to initialize the driver.
     //
-    ntStatus =  PcInitializeAdapterDriver(DriverObject,
-                                          RegistryPathName,
-                                          (PDRIVER_ADD_DEVICE)AddDevice);
+    ntStatus = PcInitializeAdapterDriver(DriverObject,
+        RegistryPathName,
+        (PDRIVER_ADD_DEVICE)AddDevice);
     IF_FAILED_ACTION_JUMP(
         ntStatus,
         DPF(D_ERROR, ("PcInitializeAdapterDriver failed, 0x%x", ntStatus)),
@@ -338,6 +356,7 @@ Return Value:
     // To intercept stop/remove/surprise-remove.
     //
     DriverObject->MajorFunction[IRP_MJ_PNP] = PnpHandler;
+    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = IoctlHandler;
 
     //
     // Hook the port class unload function
@@ -349,7 +368,7 @@ Return Value:
     // All done.
     //
     ntStatus = STATUS_SUCCESS;
-    
+
 Done:
 
     if (!NT_SUCCESS(ntStatus))
@@ -361,7 +380,7 @@ Done:
 
         ReleaseRegistryStringBuffer();
     }
-    
+
     return ntStatus;
 } // DriverEntry
 
@@ -372,9 +391,9 @@ Done:
 #pragma code_seg("PAGE")
 //=============================================================================
 NTSTATUS AddDevice
-( 
+(
     _In_  PDRIVER_OBJECT    DriverObject,
-    _In_  PDEVICE_OBJECT    PhysicalDeviceObject 
+    _In_  PDEVICE_OBJECT    PhysicalDeviceObject
 )
 /*++
 
@@ -407,23 +426,47 @@ Return Value:
 
     NTSTATUS        ntStatus;
     ULONG           maxObjects;
+    UNICODE_STRING  symbolicLinkName;
 
     DPF(D_TERSE, ("[AddDevice]"));
 
     maxObjects = g_MaxMiniports;
 
+    // Register an I/O device interface
+    //RtlInitUnicodeString(&usDosDeviceName, L"\\DosDevices\\HoalohaMicIO");
+    UNICODE_STRING Suffix = RTL_CONSTANT_STRING(L"Wave");
+    ntStatus = IoRegisterDeviceInterface(PhysicalDeviceObject, &GUID_DEVINTERFACE_VIRTUAL_MIC_IO, &Suffix, &symbolicLinkName);
+    IF_FAILED_ACTION_JUMP(
+        ntStatus,
+        DPF(D_ERROR, ("IoRegisterDeviceInterface failed, 0x%x", ntStatus)),
+        Done);
+
+    ntStatus = IoSetDeviceInterfaceState(&symbolicLinkName, TRUE);
+    IF_FAILED_ACTION_JUMP(
+        ntStatus,
+        DPF(D_ERROR, ("IoSetDeviceInterfaceState failed, 0x%x", ntStatus)),
+        Done);
+    DbgPrint("Successfully Registered IO Device: %ws\n", symbolicLinkName.Buffer);
+    RtlFreeUnicodeString(&symbolicLinkName);
+
+
     // Tell the class driver to add the device.
     //
-    ntStatus = 
+    ntStatus =
         PcAddAdapterDevice
-        ( 
+        (
             DriverObject,
             PhysicalDeviceObject,
             PCPFNSTARTDEVICE(StartDevice),
             maxObjects,
             0
         );
+    IF_FAILED_ACTION_JUMP(
+        ntStatus,
+        DPF(D_ERROR, ("PcAddAdapterDevice failed, 0x%x", ntStatus)),
+        Done);
 
+Done:
     return ntStatus;
 } // AddDevice
 
@@ -448,31 +491,31 @@ PowerControlCallback
     UNREFERENCED_PARAMETER(OutBufferSize);
     UNREFERENCED_PARAMETER(BytesReturned);
     UNREFERENCED_PARAMETER(Context);
-    
+
     return STATUS_NOT_IMPLEMENTED;
 }
 
 #pragma code_seg("PAGE")
-NTSTATUS 
+NTSTATUS
 InstallEndpointRenderFilters(
-    _In_ PDEVICE_OBJECT     _pDeviceObject, 
-    _In_ PIRP               _pIrp, 
+    _In_ PDEVICE_OBJECT     _pDeviceObject,
+    _In_ PIRP               _pIrp,
     _In_ PADAPTERCOMMON     _pAdapterCommon,
     _In_ PENDPOINT_MINIPAIR _pAeMiniports
-    )
+)
 {
-    NTSTATUS                    ntStatus                = STATUS_SUCCESS;
-    PUNKNOWN                    unknownTopology         = NULL;
-    PUNKNOWN                    unknownWave             = NULL;
-    PPORTCLSETWHELPER           pPortClsEtwHelper       = NULL;
+    NTSTATUS                    ntStatus = STATUS_SUCCESS;
+    PUNKNOWN                    unknownTopology = NULL;
+    PUNKNOWN                    unknownWave = NULL;
+    PPORTCLSETWHELPER           pPortClsEtwHelper = NULL;
 #ifdef _USE_IPortClsRuntimePower
-    PPORTCLSRUNTIMEPOWER        pPortClsRuntimePower    = NULL;
+    PPORTCLSRUNTIMEPOWER        pPortClsRuntimePower = NULL;
 #endif // _USE_IPortClsRuntimePower
-    PPORTCLSStreamResourceManager pPortClsResMgr        = NULL;
-    PPORTCLSStreamResourceManager2 pPortClsResMgr2      = NULL;
+    PPORTCLSStreamResourceManager pPortClsResMgr = NULL;
+    PPORTCLSStreamResourceManager2 pPortClsResMgr2 = NULL;
 
     PAGED_CODE();
-    
+
     UNREFERENCED_PARAMETER(_pDeviceObject);
 
     ntStatus = _pAdapterCommon->InstallEndpointFilters(
@@ -485,7 +528,7 @@ InstallEndpointRenderFilters(
 
     if (unknownWave) // IID_IPortClsEtwHelper and IID_IPortClsRuntimePower interfaces are only exposed on the WaveRT port.
     {
-        ntStatus = unknownWave->QueryInterface (IID_IPortClsEtwHelper, (PVOID *)&pPortClsEtwHelper);
+        ntStatus = unknownWave->QueryInterface(IID_IPortClsEtwHelper, (PVOID*)&pPortClsEtwHelper);
         if (NT_SUCCESS(ntStatus))
         {
             _pAdapterCommon->SetEtwHelper(pPortClsEtwHelper);
@@ -495,7 +538,7 @@ InstallEndpointRenderFilters(
 
 #ifdef _USE_IPortClsRuntimePower
         // Let's get the runtime power interface on PortCls.  
-        ntStatus = unknownWave->QueryInterface(IID_IPortClsRuntimePower, (PVOID *)&pPortClsRuntimePower);
+        ntStatus = unknownWave->QueryInterface(IID_IPortClsRuntimePower, (PVOID*)&pPortClsRuntimePower);
         if (NT_SUCCESS(ntStatus))
         {
             // This interface would typically be stashed away for later use.  Instead,
@@ -535,7 +578,7 @@ InstallEndpointRenderFilters(
         // (i.e., do NOT add the current thread as streaming resource).
         //
         // testing IPortClsStreamResourceManager:
-        ntStatus = unknownWave->QueryInterface(IID_IPortClsStreamResourceManager, (PVOID *)&pPortClsResMgr);
+        ntStatus = unknownWave->QueryInterface(IID_IPortClsStreamResourceManager, (PVOID*)&pPortClsResMgr);
         if (NT_SUCCESS(ntStatus))
         {
             PCSTREAMRESOURCE_DESCRIPTOR res;
@@ -547,7 +590,7 @@ InstallEndpointRenderFilters(
             res.Pdo = pdo;
             res.Type = ePcStreamResourceThread;
             res.Resource.Thread = PsGetCurrentThread();
-            
+
             NTSTATUS ntStatusTest = pPortClsResMgr->AddStreamResource(NULL, &res, &hRes);
             if (NT_SUCCESS(ntStatusTest))
             {
@@ -558,9 +601,9 @@ InstallEndpointRenderFilters(
             pPortClsResMgr->Release();
             pPortClsResMgr = NULL;
         }
-        
+
         // testing IPortClsStreamResourceManager2:
-        ntStatus = unknownWave->QueryInterface(IID_IPortClsStreamResourceManager2, (PVOID *)&pPortClsResMgr2);
+        ntStatus = unknownWave->QueryInterface(IID_IPortClsStreamResourceManager2, (PVOID*)&pPortClsResMgr2);
         if (NT_SUCCESS(ntStatus))
         {
             PCSTREAMRESOURCE_DESCRIPTOR res;
@@ -572,7 +615,7 @@ InstallEndpointRenderFilters(
             res.Pdo = pdo;
             res.Type = ePcStreamResourceThread;
             res.Resource.Thread = PsGetCurrentThread();
-            
+
             NTSTATUS ntStatusTest = pPortClsResMgr2->AddStreamResource2(pdo, NULL, &res, &hRes);
             if (NT_SUCCESS(ntStatusTest))
             {
@@ -592,24 +635,24 @@ InstallEndpointRenderFilters(
 }
 
 #pragma code_seg("PAGE")
-NTSTATUS 
+NTSTATUS
 InstallAllRenderFilters(
-    _In_ PDEVICE_OBJECT _pDeviceObject, 
-    _In_ PIRP           _pIrp, 
+    _In_ PDEVICE_OBJECT _pDeviceObject,
+    _In_ PIRP           _pIrp,
     _In_ PADAPTERCOMMON _pAdapterCommon
-    )
+)
 {
     NTSTATUS            ntStatus;
-    PENDPOINT_MINIPAIR* ppAeMiniports   = g_RenderEndpoints;
-    
+    PENDPOINT_MINIPAIR* ppAeMiniports = g_RenderEndpoints;
+
     PAGED_CODE();
 
-    for(ULONG i = 0; i < g_cRenderEndpoints; ++i, ++ppAeMiniports)
+    for (ULONG i = 0; i < g_cRenderEndpoints; ++i, ++ppAeMiniports)
     {
         ntStatus = InstallEndpointRenderFilters(_pDeviceObject, _pIrp, _pAdapterCommon, *ppAeMiniports);
         IF_FAILED_JUMP(ntStatus, Exit);
     }
-    
+
     ntStatus = STATUS_SUCCESS;
 
 Exit:
@@ -671,35 +714,35 @@ Exit:
 #pragma code_seg("PAGE")
 NTSTATUS
 StartDevice
-( 
-    _In_  PDEVICE_OBJECT          DeviceObject,     
-    _In_  PIRP                    Irp,              
-    _In_  PRESOURCELIST           ResourceList      
-)  
+(
+    _In_  PDEVICE_OBJECT          DeviceObject,
+    _In_  PIRP                    Irp,
+    _In_  PRESOURCELIST           ResourceList
+)
 {
-/*++
+    /*++
 
-Routine Description:
+    Routine Description:
 
-  This function is called by the operating system when the device is 
-  started.
-  It is responsible for starting the miniports.  This code is specific to    
-  the adapter because it calls out miniports for functions that are specific 
-  to the adapter.                                                            
+      This function is called by the operating system when the device is
+      started.
+      It is responsible for starting the miniports.  This code is specific to
+      the adapter because it calls out miniports for functions that are specific
+      to the adapter.
 
-Arguments:
+    Arguments:
 
-  DeviceObject - pointer to the driver object
+      DeviceObject - pointer to the driver object
 
-  Irp - pointer to the irp 
+      Irp - pointer to the irp
 
-  ResourceList - pointer to the resource list assigned by PnP manager
+      ResourceList - pointer to the resource list assigned by PnP manager
 
-Return Value:
+    Return Value:
 
-  NT status code.
+      NT status code.
 
---*/
+    --*/
     UNREFERENCED_PARAMETER(ResourceList);
 
     PAGED_CODE();
@@ -708,26 +751,26 @@ Return Value:
     ASSERT(Irp);
     ASSERT(ResourceList);
 
-    NTSTATUS                    ntStatus        = STATUS_SUCCESS;
+    NTSTATUS                    ntStatus = STATUS_SUCCESS;
 
-    PADAPTERCOMMON              pAdapterCommon  = NULL;
-    PUNKNOWN                    pUnknownCommon  = NULL;
-    PortClassDeviceContext*     pExtension      = static_cast<PortClassDeviceContext*>(DeviceObject->DeviceExtension);
+    PADAPTERCOMMON              pAdapterCommon = NULL;
+    PUNKNOWN                    pUnknownCommon = NULL;
+    PortClassDeviceContext* pExtension = static_cast<PortClassDeviceContext*>(DeviceObject->DeviceExtension);
 
     DPF_ENTER(("[StartDevice]"));
 
     //
     // create a new adapter common object
     //
-    ntStatus = NewAdapterCommon( 
-                                &pUnknownCommon,
-                                IID_IAdapterCommon,
-                                NULL,
-                                POOL_FLAG_NON_PAGED 
-                                );
+    ntStatus = NewAdapterCommon(
+        &pUnknownCommon,
+        IID_IAdapterCommon,
+        NULL,
+        POOL_FLAG_NON_PAGED
+    );
     IF_FAILED_JUMP(ntStatus, Exit);
 
-    ntStatus = pUnknownCommon->QueryInterface( IID_IAdapterCommon,(PVOID *) &pAdapterCommon);
+    ntStatus = pUnknownCommon->QueryInterface(IID_IAdapterCommon, (PVOID*)&pAdapterCommon);
     IF_FAILED_JUMP(ntStatus, Exit);
 
     ntStatus = pAdapterCommon->Init(DeviceObject);
@@ -735,7 +778,7 @@ Return Value:
 
     //
     // register with PortCls for power-management services
-    ntStatus = PcRegisterAdapterPowerManagement( PUNKNOWN(pAdapterCommon), DeviceObject);
+    ntStatus = PcRegisterAdapterPowerManagement(PUNKNOWN(pAdapterCommon), DeviceObject);
     IF_FAILED_JUMP(ntStatus, Exit);
 
     //
@@ -766,23 +809,23 @@ Exit:
     // Release the adapter IUnknown interface.
     //
     SAFE_RELEASE(pUnknownCommon);
-    
+
     return ntStatus;
 } // StartDevice
 
 //=============================================================================
 #pragma code_seg("PAGE")
-NTSTATUS 
+NTSTATUS
 PnpHandler
 (
-    _In_ DEVICE_OBJECT *_DeviceObject, 
-    _Inout_ IRP *_Irp
+    _In_ DEVICE_OBJECT* _DeviceObject,
+    _Inout_ IRP* _Irp
 )
 /*++
 
 Routine Description:
 
-  Handles PnP IRPs                                                           
+  Handles PnP IRPs
 
 Arguments:
 
@@ -797,13 +840,13 @@ Return Value:
 --*/
 {
     NTSTATUS                ntStatus = STATUS_UNSUCCESSFUL;
-    IO_STACK_LOCATION      *stack;
-    PortClassDeviceContext *ext;
+    IO_STACK_LOCATION* stack;
+    PortClassDeviceContext* ext;
 
     // Documented https://msdn.microsoft.com/en-us/library/windows/hardware/ff544039(v=vs.85).aspx
     // This method will be called in IRQL PASSIVE_LEVEL
 #pragma warning(suppress: 28118)
-    PAGED_CODE(); 
+    PAGED_CODE();
 
     ASSERT(_DeviceObject);
     ASSERT(_Irp);
@@ -825,7 +868,7 @@ Return Value:
         if (ext->m_pCommon != NULL)
         {
             ext->m_pCommon->Cleanup();
-            
+
             ext->m_pCommon->Release();
             ext->m_pCommon = NULL;
         }
@@ -834,11 +877,103 @@ Return Value:
     default:
         break;
     }
-    
+
     ntStatus = PcDispatchIrp(_DeviceObject, _Irp);
 
     return ntStatus;
 }
-
 #pragma code_seg()
 
+#pragma code_seg("PAGE")
+
+NTSTATUS IoctlHandler
+(
+    PDEVICE_OBJECT DeviceObject,
+    PIRP Irp
+)
+{
+    return PcDispatchIrp(DeviceObject, Irp);
+
+    //UNREFERENCED_PARAMETER(DeviceObject);
+
+    //NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
+    //PCHAR pInputBuffer;
+    //PCHAR pOutputBuffer;
+    //PIO_STACK_LOCATION pIoStackIrp = NULL;
+    //UINT dwDataRead = 0, dwDataWritten = 0;
+    //PCHAR pReturnData = "IOCTL - Buffered I/O From Kernel!";
+    //UINT dwDataSize = sizeof("IOCTL - Buffered I/O From Kernel!");
+    //DbgPrint("Example_HandleSampleIoctl_BufferedIo Called \r\n");
+
+    //pInputBuffer = (PCHAR)Irp->AssociatedIrp.SystemBuffer;
+    //pOutputBuffer = (PCHAR)Irp->AssociatedIrp.SystemBuffer;
+    //pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+
+    //if (pInputBuffer && pOutputBuffer)
+    //{
+
+    //    /*
+    //     * We need to verify that the string
+    //     * is NULL terminated. Bad things can happen
+    //     * if we access memory not valid while in the Kernel.
+    //     */
+    //    if (IsStringTerminated(pInputBuffer,
+    //        pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength,
+    //        &dwDataRead)) {
+    //        DbgPrint("UserModeMessage = '%s'", pInputBuffer);
+    //        DbgPrint("%i >= %i",
+    //            pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength,
+    //            dwDataSize);
+    //        if (pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength
+    //            >= dwDataSize)
+    //        {
+    //            /*
+    //             * We use "RtlCopyMemory" in the kernel instead of memcpy.
+    //             * RtlCopyMemory *IS* memcpy, however it's best to use the
+    //             * wrapper in case this changes in the future.
+    //             */
+    //            RtlCopyMemory(pOutputBuffer, pReturnData, dwDataSize);
+    //            dwDataWritten = dwDataSize;
+    //            NtStatus = STATUS_SUCCESS;
+    //        }
+    //        else
+    //        {
+    //            dwDataWritten = dwDataSize;
+    //            NtStatus = STATUS_BUFFER_TOO_SMALL;
+    //        }
+
+    //    }
+    //}
+
+    //return NtStatus;
+}
+#pragma code_seg()
+
+#pragma code_seg("PAGE")
+BOOLEAN IsStringTerminated(PCHAR pString, UINT uiLength, UINT* pdwStringLength)
+{
+    BOOLEAN bStringIsTerminated = FALSE;
+    UINT uiIndex = 0;
+
+    DbgPrint("IsStringTerminated(0x%0x, %d)\r\n", pString, uiLength);
+
+    *pdwStringLength = 0;
+
+    while (uiIndex < uiLength && bStringIsTerminated == FALSE)
+    {
+        if (pString[uiIndex] == '\0')
+        {
+            *pdwStringLength = uiIndex + 1; /* Include the total count we read, includes the NULL */
+            bStringIsTerminated = TRUE;
+            DbgPrint("  String Is Terminated!\r\n");
+        }
+        else
+        {
+            uiIndex++;
+        }
+    }
+
+    return bStringIsTerminated;
+}
+
+#pragma code_seg()

@@ -351,7 +351,7 @@
       <PreprocessorDefinitions>%(PreprocessorDefinitions);_USE_WAVERT_;_USE_IPortClsRuntimePower;_NEW_DELETE_OPERATORS_</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..\Utilities;.</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..\Filters;.</AdditionalIncludeDirectories>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);..\Inc;.</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\Gersh\Git\fork\Windows-driver-samples\audio\simpleaudiosample\VirtualMicrophone;%(AdditionalIncludeDirectories);..\Inc;.</AdditionalIncludeDirectories>
       <ExceptionHandling>
       </ExceptionHandling>
     </ClCompile>
